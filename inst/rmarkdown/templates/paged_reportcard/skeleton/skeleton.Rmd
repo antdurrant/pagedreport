@@ -1,0 +1,1087 @@
+---
+title: 'Report Card'
+author: "`r params$student_name`"
+date: "2020 Term D `r params$level`"
+output: 
+    pagedown::paged_reportcard:
+      logo_to_white: TRUE
+      img_to_dark: FALSE
+      logo: "Main"
+      front_img: "Main"
+      number_sections: false
+knit: pagedown::chrome_print
+main-color: "`r jprep.datasets::jprep_colours['Main']` "
+secondary-color: "`r jprep.datasets::jprep_colours[params$level]`"
+main-font: "Century Gothic"
+header-font: "Bitter"
+toc: false 
+params:
+  exam_id: ""
+  student_id: ""
+  level: ""
+  delin: ""
+  student_name: "DEMO STUDENT"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+library(jprep.datasets)
+library(arrow)
+library(tidyverse)
+library(flexdashboard)
+library(arrow)
+library(tidyverse)
+library(gt)
+library(glue)
+library(lubridate)
+library(janitor)
+```
+
+
+
+```{r load}
+student <- params$student_id
+exam <- params$exam_id
+year_term <- "2020_D_"
+
+cms <- read_feather(glue("./report_cards/{year_term}cms.feather")) %>% 
+  filter(student_id == student & exam_id == params$exam_id) %>% select(-exam_id) %>% 
+  mutate(quiz = parse_number(quiz))
+
+week <- read_feather(glue("./report_cards/{year_term}weekly_results.feather")) %>% 
+  filter(student_id == student & exam_id == exam)
+
+week_avg <- read_feather(glue("./report_cards/{year_term}weekly_results_avg.feather")) %>% 
+  filter(exam_id == exam)
+
+term <- read_feather(glue("./report_cards/{year_term}termly_results.feather")) %>% 
+  filter(student_id == student & exam_id == exam)
+
+term_avg <- read_feather(glue("./report_cards/{year_term}termly_results_avg.feather")) %>% 
+  filter(exam_id == exam)
+
+marksheet_def <- read_csv("../data/exam_master/marksheet_totals.csv")
+
+portal <- read_feather(glue("./report_cards/{year_term}portal_activity_counts.feather")) %>% 
+  filter(student_id == student & level == params$level)
+
+grammar_dojo <- read_feather(glue("./report_cards/{year_term}results_dojo_g.feather")) %>% filter(student_id == student)
+
+vocab_dojo <- read_feather(glue("./report_cards/{year_term}results_dojo_v.feather")) %>% filter(student_id == student & exam_id == params$exam_id)  
+
+domestic_exam_exp <- if(params$level %in% c("EA570", "EA580")){
+  read_csv("./report_cards/ea5_exp.csv")
+  }else if (params$level == "EA680"){
+    read_csv("./report_cards/ea6_exp.csv")
+  }
+
+la_comment <- if(params$level == "LA400") {
+  read_csv(glue("./report_cards/{params$exam_id}_comments.csv"))
+  } %>% filter(student_id == params$student_id) %>% pull(comments)
+
+kids_comment <- if(params$delin == "Kids"){
+  read_csv(glue("./report_cards/{year_term}kids_comments.csv")) %>%
+    filter(exam_id == params$exam_id) %>% pull(comment)
+}
+colours <- read_csv("./report_cards/2020 Colours.csv")
+
+colour <- (colours$HEX_HASH)
+names(colour) <- colours$level
+```
+
+                 
+
+
+```{r}
+comments <- if(!is.null(la_comment)){
+  glue("
+
+
+# A message from your teacher 
+
+
+
+*{la_comment}*")
+}
+```
+
+`r comments` 
+
+```{r}
+kid_com <- if(!is.null(kids_comment)){
+    glue("
+
+
+# A message from your teachers
+
+
+
+{kids_comment}")
+}
+```
+
+`r kid_com`
+
+```{r bbb}
+# online session attendance ##
+online_include <- 
+  if (week %>% filter(str_detect(super_cat, "bbb_session")) %>% nrow > 0 & params$delin != "Kids") {
+  # if ((params$delin != "Core") & week %>% filter(str_detect(super_cat, "bbb_session")) %>% nrow > 0) {
+glue("
+
+
+# J PREP Online Attendance
+
+For Term B Weeks 1-3, we continued our online-only education. See which sessions you attended below.
+
+Term B Week 3まではオンラインのみの授業が続きました。出席情報を確認しましょう。
+")
+}
+```
+
+`r online_include`
+
+```{r}
+ online_quiz <-  week %>% select(-exam_id, -student_id) %>% 
+  filter(str_detect(super_cat, "quiz")|
+           (str_detect(super_cat, "assignment") &
+              !str_detect(category, "Draft"))) %>%
+  filter( !str_detect(category, "[E|e]xam") & 
+            !str_detect(category, "[R|r]esearch") & 
+            !str_detect(category, "[T|t]ask") & 
+            !str_detect(category, "[D|d]iscussion") & 
+            !str_detect(category, "[R|r]eview") & 
+            !str_detect(category, "[R|r]emember") & 
+            !str_detect(category, "[S|s]ummary") &
+            !str_detect(category, "和訳課題") &
+            !str_detect(category, "Antonym") &
+            !str_detect(category, "[W|w]riting [A|a]ssignment") &
+            !str_detect(category, "[S|s]imilarities")
+          )  %>%
+  select(-super_cat) %>%
+  arrange(week, category) %>%
+  mutate(category = str_replace_all(category, "_", " "),
+         category = str_to_title(category),
+         category = str_replace(category, "Clil", "CLIL")) %>%
+  rename(Level = level, Term = term, Week = week) %>%
+  pivot_wider(names_from = category,
+              values_from = score) %>% 
+    select(Level, Term, Week, contains("CLIL"), contains("Grammar"), everything())
+
+if (!is.null(online_include)) {
+   
+  
+  
+  week %>% select(-exam_id, -student_id, -score) %>% 
+  filter(str_detect(super_cat, "bbb_session")) %>%
+  arrange(week, category) %>%
+  mutate(super_cat = str_remove(super_cat, "bbb_")) %>%
+  pivot_wider(names_from = super_cat,
+              values_from = category) %>%
+  rename(Level = level, Term = term, Week = week, `Online Session` = session) %>%
+    select(-contains("memo")) %>% 
+    left_join(online_quiz) %>%
+    remove_empty(which = "cols") %>%
+    gt() %>%
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) %>% 
+  fmt_missing(columns = everything(), missing_text = "")
+}
+
+```
+
+
+```{r cms}
+# cms ##
+onsite_include <- 
+  if (cms %>% nrow > 0) {
+  # if ((cms %>% nrow > 0) & params$delin != "Core") {
+glue("
+
+# J PREP Hybrid Attendance
+
+From Term B Week 4, we introduced a hybrid model of lessons - you could join online or on-site. Find your attendances and scores below.
+
+Term B Week 4より、校舎でもオンラインでも授業を提供するようになりました。出席などの情報を確認しましょう。
+")
+}
+  
+```
+
+`r onsite_include`
+
+```{r}
+if (!is.null(onsite_include) & params$delin == "Kids") {
+  
+  cms %>% select(-student_id)%>%
+  rename(Level = level, Term = term,
+         Week = week, 
+         Site = site, 
+         Class = class,
+         出欠席 = attendance,
+         遅刻　= lateness, 
+         Quiz = quiz, 
+         貢献度 = participation,
+         Homework = homework) %>% 
+    select(-contains("memo"), -Quiz, -Homework) %>%
+    remove_empty(which = "cols") %>%
+  gt() %>%
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) %>% 
+  fmt_missing(columns = everything(), missing_text = "")
+} else if (!is.null(onsite_include)){
+ 
+  cms %>% select(-student_id)%>%
+  rename(Level = level, Term = term,
+         Week = week, 
+         Site = site, 
+         Class = class,
+         出欠席 = attendance,
+         遅刻　= lateness, 
+         Quiz = quiz, 
+         貢献度 = participation,
+         Homework = homework) %>% 
+    select(-contains("memo")) %>%
+    left_join(online_quiz) %>%
+    remove_empty(which = "cols") %>%
+  gt() %>%
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) %>% 
+  fmt_missing(columns = everything(), missing_text = "")
+}
+```
+
+
+
+
+
+
+
+```{r exams}
+# exams ##
+
+exam_include <- if (params$level %in% c("EX300", "EX350", "LA380", "ES110", "ES120", "ES150", "ES200", "ES200/210", "ES210", "ES220", "ES250","EA280", "ES350", "ES360", "ES450", "SA500", "SA530", "SA550", "SA580")){
+  paste("
+
+
+
+# J PREP Online Final Exam 
+
+
+The exams in Week 11 were taken at home. 
+
+Week 11の期末試験はオンラインでの受験となりました。")
+  
+  } else if (params$level %in% c("ES010", "ES015", "ES020", "ES030", "ES040", "EX100", "EX200", "EX250")){
+  
+paste("
+
+
+
+# Final Exam 
+
+
+The exams in Week 11 were taken on-site only, with pdfs and audio files available to online students but no grading. 
+
+Week 11の期末試験は校舎のみで行われました。オンラインの生徒はPortalでpdfや音声を確認し自宅で取り組みました。
+")
+
+  } else if (params$level %in% c("EA570", "EA580", "EA680")){
+  paste("
+
+
+# Final Exam 
+
+
+The exams in Week 11 were taken on-site only.
+
+Week 11の期末試験は校舎のみで行われました。")
+    
+}
+```
+
+`r exam_include`
+
+```{r exams_explain}
+
+
+core1<- glue(
+"- The **listening** sections used a mix of general-English Eiken-style questions and questions related to in-class materials. If you found this difficult, we recommend practicing more with the **J PREP videos** and working on your active-listening in the CLIL sections of classes.
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- This was the first time the final exam had a **reading** section. The content was based on your in-class materials. Don't worry if you found this difficult; it is a skill you will develop with time. For extra practice, we recommend quick-sentence reading with **Vocab Dojo** and our practice videos, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. You can see a breakdown of how you did for questions relating to each week's content. If you found any weeks particularly difficult, we recommend you go back and check **Grammar Lectures** and then try the questions on **Grammar Dojo** again.
+
+
+-	Listeningセクションは英検を参考にした問題と授業の教材に関する問題が含まれています。難しいと感じた場合は、授業のCLILセクションにおけるActive listeningでの集中と J PREP videosを使った練習への取り組みをおすすめします。
+-	VocabularyセクションではSupplements、J PREP videos、およびVocab Dojoで取り上げた単語が使用されました。難しいと感じた場合は、Vocab Dojoで単語のスキル向上に取り組むことをおすすめします。J PREP Vocab Groupsと毎週のコンテンツもぜひ取り組んでみましょう。
+- Term Dでは初めてのReadingセクションがありました。授業中に取り上げたテーマと関連した問題が出題されました。将来的に長文読解のスキルが必要となりますので、少しずつ慣れていきましょう。授業中に取り上げたテーマと関連した
+-	Grammarセクションでの問題はGrammar Dojoと同じ形式です。毎週の文法項目に対応する自分の点数を確認できます。難しいと感じたWeekがあった場合は、Grammar Lecture Video（文法解説）もう1度視聴したあとにGrammar Dojoの問題に再挑戦することをおすすめします。
+
+")
+
+
+core2 <-glue("- The **listening** sections used a mix of general-English Eiken-style questions and questions related to in-class materials. If you found this difficult, we recommend practicing more with the **J PREP videos** and working on your active-listening in the CLIL sections of classes.
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- The **reading** sections used articles related to in-class materials. If you found this difficult, we recommend practicing quick-sentence reading with **Vocab Dojo**, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. You can see a breakdown of how you did for questions relating to each week's content. If you found any weeks particularly difficult, we recommend you go back and check **Grammar Lectures** and then try the questions on **Grammar Dojo** again.
+
+-	Listeningセクションは英検を参考にした問題と授業の教材に関する問題が含まれています。難しいと感じた場合は、授業のCLILセクションにおけるActive listeningでの集中と J PREP videosを使った練習への取り組みをおすすめします。
+-	VocabularyセクションではSupplements、J PREP videos、およびVocab Dojoで取り上げた単語が出題されました。難しいと感じた場合は、Vocab Dojoで単語のスキル向上に取り組むことをおすすめします。J PREP Vocab Groupsと毎週のコンテンツもぜひ取り組んでみましょう。
+-	Readingセクションでは授業中に取り上げたテーマと関連した記事が使われました。難しいと感じた場合は、Vocab DojoにおけるQuick-sentence readingの練習、テキスト中の長文読解、およびJ PREP Libraryから本を借りて読んでみることをおすすめします。
+-	Grammarセクションでの問題はGrammar Dojoと同じ様式です。毎週の文法項目に対応する自分の点数を確認できます。難しいと感じたWeekがあった場合は、Grammar Lecture Video（文法解説）をもう1度視聴したあとにGrammar Dojoの問題に再挑戦することをおすすめします。
+")
+
+
+core4 <-glue("- The **listening** sections used a mix of general-English Eiken-style questions and questions related to in-class materials. If you found this difficult, we recommend practicing more with the **J PREP videos** and working on your active-listening in the CLIL sections of classes.
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- The **reading** sections used articles related to in-class materials. If you found this difficult, we recommend practicing quick-sentence reading with **Vocab Dojo**, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. This term's grammar questions covered a review of the entire year's content.
+
+-	Listeningセクションは英検を参考にした問題と授業の教材に関する問題が含まれています。難しいと感じた場合は、授業のCLILセクションにおけるActive listeningでの集中と J PREP videosを使った練習への取り組みをおすすめします。
+-	VocabularyセクションではSupplements、J PREP videos、およびVocab Dojoで取り上げた単語が出題されました。難しいと感じた場合は、Vocab Dojoで単語のスキル向上に取り組むことをおすすめします。J PREP Vocab Groupsと毎週のコンテンツもぜひ取り組んでみましょう。
+-	Readingセクションでは授業中に取り上げたテーマと関連した記事が使われました。難しいと感じた場合は、Vocab DojoにおけるQuick-sentence readingの練習、テキスト中の長文読解、およびJ PREP Libraryから本を借りて読んでみることをおすすめします。
+-	Grammarセクションでの問題はGrammar Dojo と同じ様式です。Term D では今年度の全般的なレビューとなりました。
+")
+
+ex300_exp <- glue(
+"EX300's final exam was particularly difficult, so we allowed up to 2 attempts. You will find displayed the highest score if you took it twice.
+
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- The **reading** sections used a section of a story related to in-class materials. If you found this difficult, we recommend practicing quick-sentence reading with **Vocab Dojo**, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. You can see a breakdown of how you did for questions relating to each week's content. If you found any weeks particularly difficult, we recommend you go back and check **Grammar Lectures** and then try the questions on **Grammar Dojo** again.
+- The **social science** section covered the materials done in the CLIL section of classes. If you found this difficult, we recommend going back over your booklet and homeworks. ")
+
+
+ex350_exp <- glue(
+"EX350's final exam was particularly difficult, so we allowed up to 2 attempts. You will find displayed the highest score if you took it twice.
+
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- The **reading** sections used a section of a story related to in-class materials. If you found this difficult, we recommend practicing quick-sentence reading with **Vocab Dojo**, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. You can see a breakdown of how you did for questions relating to each week's content. If you found any weeks particularly difficult, we recommend you go back and check **Grammar Lectures** and then try the questions on **Grammar Dojo** again.
+- The **philosophy** sections covered the materials done in the CLIL section of classes. If you found this difficult, we recommend going back over your booklet and homeworks. ")
+
+la380_exp <- glue(
+  
+"LA380's final exam was particularly difficult, so we allowed up to 2 attempts. You will find displayed the highest score if you took it twice.
+
+- The **vocabulary** sections used vocabulary seen during the term - in the **supplements**, the **J PREP videos**, and **Vocab Dojo**. If you found this difficult, we recommend using Vocab Dojo more to polish your vocabulary skills. Work through the J PREP Vocab Groups as well as the weekly content.
+- The **reading** sections used an article related to in-class materials, and a general English article. If you found this difficult, we recommend practicing quick-sentence reading with **Vocab Dojo**, and longer-reading with your textbooks and borrowing books from **J PREP Library**.
+- The **grammar** sections used questions that follow the same format as **Grammar Dojo**. You can see a breakdown of how you did for questions relating to each week's content. If you found any weeks particularly difficult, we recommend you go back and check **Grammar Lectures** and then try the questions on **Grammar Dojo** again.")
+
+kids_exp <- glue("")
+
+
+ea_exp <- if(!is.null(domestic_exam_exp)){
+  domestic_exam_exp %>% select(-delin, -section) %>% 
+  group_by(title) %>%
+   gt() %>%
+    tab_header(title = glue("{params$level} Final Exam Description")) %>%
+    fmt_missing(columns = everything(), missing_text = "") %>%
+     tab_style(style = list(
+      cell_text(weight = "bold", size = "large")),
+      locations = cells_row_groups()
+      ) %>%
+        cols_label(text = ""
+    ) 
+}
+  
+exam_exp <- case_when( 
+  params$level %in% c("ES200","ES200/210", "ES210", "ES220", "ES250", "EA280", "ES350", "ES360")  ~ core2,
+  params$level == "ES450" ~ core4,
+  params$level %in% c("ES110", "ES120", "ES150") ~ core1,
+  params$level %in% c( "ES010", "ES015", "ES020", "ES030", "ES040", "EX100", "EX200", "EX250") ~ kids_exp,
+  params$level == "EX300" ~ ex300_exp,
+  params$level == "EX350" ~ ex350_exp,
+  params$level == "LA380" ~ la380_exp
+  )
+                       
+exam_exp <- if (is.na(exam_exp)) NULL else exam_exp
+```
+
+
+`r exam_exp`
+
+`r ea_exp`
+
+```{r exams_display}
+all <- marksheet_def %>% filter( exam_id == params$exam_id) %>% #term_avg %>% filter(super_cat == "marksheet_exam") %>%
+  #left_join(marksheet_def) %>%
+  left_join(term_avg) %>%
+  left_join(term) %>%
+  mutate(definition = str_to_title(definition)) %>%
+  rename(Section = definition, 
+          Weight = weight, 
+          `Your Score` = score,
+          Average = avg)
+
+exam_title <- # kids online ##
+if ((params$delin == "Kids" | params$level %in% c("EX100", "EX200", "EX250")) & cms %>% filter(week == 11) %>% filter(str_detect(site, "Online")) %>% nrow > 0 ){
+  glue("")
+
+ } else if (all %>% filter(!str_detect(Section, "Week")) %>% nrow>0 
+  ) {
+  glue("### Final Exam Scores")}
+
+# kids ##
+exam <- if ((params$delin == "Kids" | params$level %in% c("EX100", "EX200", "EX250")) & cms %>% filter(week == 11) %>% filter(str_detect(site, "Online")) %>% nrow == 0 ) { 
+  read_csv(glue("./report_cards/{year_term}kids_fe.csv")) %>% 
+    filter(level == params$level)  %>%
+    left_join(term[c("category", "score")]) %>%
+    left_join(term_avg[c("category", "avg")]) %>%
+    select(-level, -category) %>%
+    group_by(Section) %>%
+    gt() %>%
+    tab_header(title = glue("{params$level} Final Exam", subtitle = "Details about the content of the final exam.")) %>%
+    fmt_missing(columns = everything(), missing_text = "") %>%
+    fmt_percent(columns = c("score", "avg"), decimals = 0) %>%
+     cols_width(
+      vars("Subsection") ~ px(130),
+      vars("Details") ~ px(500),
+      TRUE ~ px(80)) %>%
+    cols_label(Subsection = "",
+               Details = "Details about the content of the final exam.",
+               score = "Your Score",
+               avg = "Average Score") %>%
+    tab_style(style = list(
+      cell_text(weight = "bold", size = "large")),
+      locations = cells_row_groups() 
+    ) %>%
+    cols_align(
+    align = "center",
+    columns = c("Weight", "score", "avg")
+    )
+
+  # Core ##
+} else if (params$delin == "Core" | params$level %in% c("EX300", "EX350", "LA380")){ # changed to accommodate EA5/6
+#(all %>% filter(!str_detect(Section, "Week")) %>% nrow>0)   {
+all %>% filter(!str_detect(Section, "Week") & !str_detect(Section, "General")) %>%
+   select(Section, 
+          Weight, 
+          `Your Score`,
+          Average) %>%
+  gt() %>% 
+    cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+    tab_header(
+    title = glue("{params$level} Final Exam Results")) %>%
+  fmt_percent(c("Your Score", "Average"), decimals = 0) %>%
+  fmt_missing(columns = everything(), missing_text = "")  
+  # Domestic ##
+} else if   (params$level %in% c("EA570", "EA580", "EA680")) {
+  all %>% 
+   select(Section, 
+          `Your Score`,
+          Average) %>%
+  gt() %>% 
+    cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+    tab_header(
+    title = glue("{params$level} Final Exam Results")) %>%
+  fmt_missing(columns = everything(), missing_text = "")   %>%
+  fmt_number("Average", decimals = 1)
+#   } else if (all %>% filter(!str_detect(Section, "Week")) %>% nrow>0)   { # removed to accommodate EA
+# all %>% filter(!str_detect(Section, "Week")) %>%
+#    select(Section, 
+#           Weight, 
+#           `Your Score`,
+#           Average) %>%
+#   gt() %>% 
+#     cols_align(
+#     align = "center",
+#     columns = everything()
+#   ) %>%
+#     tab_header(
+#     title = glue("{params$level} Final Exam Results")) %>%
+#   fmt_percent(c("Your Score", "Average"), decimals = 0) %>%
+#   fmt_missing(columns = "Weight", missing_text = "")  
+
+  } else if (week %>% filter(str_detect(category, 'Final Exam$')) %>% nrow > 0 &
+             params$level != "LA400") {
+  glue("Your final exam score was: {week %>% filter(str_detect(category, 'Final Exam$')) %>% pull(score)}. Please check the assignment on Portal for more detail. <br> Portal上で詳細を確認しましょう。")
+} else if (params$level %in% c("SA500", "SA530", "SA550", "SA580")){ 
+  week_avg %>% 
+    filter((str_detect(category, "Test") & super_cat == "portal_quiz") | str_detect(category, "[E|e]xam")) %>% 
+    left_join(week) %>%
+    ungroup() %>%
+    select(Section = category,
+           `Your Score` = score,
+           Average = avg) %>%
+    gt() %>% 
+    cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+    tab_header(
+    title = glue("{params$level} Final Exam Results"))  %>%
+    fmt_number(
+    columns = vars(Average),
+    decimals = 1
+  ) %>%
+    fmt_missing(columns = everything(), missing_text = "")  
+} else if (!is.null(exam_include) & params$delin != "Explorers") {  
+  glue("**It looks like you didn't submit your final exam this term.** Take the exam next time to get feedback on your strengths and weaknesses.
+       
+       今期は受験しなかったようです。Term Dでは、受けて、自分の得意・不得意な分野を把握し、取り組みましょう。") 
+}
+```
+`r exam_title`  
+
+
+`r exam`  
+  
+  
+
+```{r exams_grammar}
+# grammar exam ##
+
+gram <- if (all %>% filter(str_detect(Section, "Week")) %>% nrow >0){
+  glue("### Final Exam Weekly Grammar Breakdown" )
+}
+```
+
+
+`r gram`  
+
+
+```{r fig.align = "center"}
+
+
+ if (!is.null(gram)){
+#(all %>% filter(str_detect(Section, "Week")) %>% nrow>0 & params$delin != "Explorers" & params$delin != "Scholars"){
+     all %>% filter(str_detect(Section, "Week") | str_detect(Section, "General")) %>%
+     filter(!is.na(Average)) %>%
+  pivot_longer(cols = c(`Your Score`, Average),
+               names_to = "Student",
+               values_to = "Score") %>%
+  mutate(Section = as_factor(Section))%>%
+  ggplot() +
+  geom_col(aes(x = Score, y = Section, fill = Student ), position = "dodge")+
+  labs(legend = NULL, 
+       caption = "* Review weeks are not tested, so will not appear in this chart.")+
+  theme(legend.position = "bottom", legend.title=element_blank()) +
+     scale_fill_discrete(breaks=c("Your Score","Average"))+
+     coord_cartesian(xlim = c(0,1))
+}
+  
+    
+```
+
+
+
+```{r fig.align = "center"}
+
+
+ if (!is.null(gram)){
+#(all %>% filter(str_detect(Section, "Week")) %>% nrow>0 & params$delin != "Explorers" & params$delin != "Scholars"){
+     all %>% filter(str_detect(Section, "Week") | str_detect(Section, "General")) %>%
+     filter(!is.na(Average)) %>%
+  pivot_longer(cols = c(`Your Score`, Average),
+               names_to = "Student",
+               values_to = "Score") %>%
+  mutate(Section = as_factor(Section))%>%
+  ggplot() +
+  geom_col(aes(x = Score, y = Section, fill = Student ), position = "dodge")+
+  labs(legend = NULL, 
+       caption = "* Review weeks are not tested, so will not appear in this chart.")+
+  theme(legend.position = "bottom", legend.title=element_blank()) +
+     scale_fill_discrete(breaks=c("Your Score","Average"))+
+     coord_cartesian(xlim = c(0,1))
+}
+  
+    
+```
+
+
+
+```{r ea_dist_inc}
+dist_include <- if(params$level %in% c("EA570", "EA580", "EA680")){
+  glue(
+    "### Exam Score Distribution
+    ")
+}  
+
+
+```
+
+`r dist_include`
+
+
+```{r ea_dist, fig.align = "center"}
+dist <- if(!is.null(dist_include)){
+  read_feather(glue("./report_cards/{year_term}termly_results.feather")) %>% 
+  filter(exam_id == params$exam_id & super_cat == "marksheet_exam") %>%
+    left_join(marksheet_def) %>%
+    mutate(definition = str_to_title(definition)) %>%
+    ggplot(aes(score))+
+    geom_histogram(fill = colour[params$level], colour = "grey", bins = 15)+
+    facet_wrap(~definition, scales = "free_x")+
+    theme_light ()+
+    theme(text=element_text(size=14,  family="YuGothic Medium"))+
+    labs(title = glue("Distribution of {params$level} Final Exam"),
+                      x = NULL,
+                      y = "Student Count")
+
+  }
+
+if(!is.null(dist)) dist
+
+```
+
+
+
+```{r academic_writing}
+### writing ####
+writing_include <- if (params$level %in% c("ES220", "ES250", "ES350", "ES450", "EA280")) {
+  glue("# Public Speaking")
+}
+```
+
+
+```{r writing_exp}
+
+l2_wr_exp <- "
+
+The focus of Term D's Writing Program was **Public Speaking**. You were asked to write and deliver a speech on a specific topic. The speeches were delivered either in-class or as a video presentation submitted through Portal. Beyond the structure of speech-writing, you learned about the skills needed to deliver effective speeches: gestures, eyes contact, voicing, intonation, and so on. Your grade was included in your Final Draft, and if you delivered your speech, you will see **Speech Complete** in the table below.
+
+Term DのWriting Programの課題は、Public Speakingでした。トピックに基づきスピーチ原稿を仕上げ、口頭発表をしました。今年度は、クラス内での発表とスピーチを録画してビデオを提出する２通りの方法で実施しました。原稿の書き方だけでなく、身振りやアイコンタクト、発声など、スピーチに必要なスキルを学びました。成績はFinal draftについています。また、スピーチの評価は行っていませんが、クラス内発表、またはビデオ提出のいずれかの方法で発表を行った場合は“Speech Complete”と記載されています。
+
+"
+
+
+l3_wr_exp <- l2_wr_exp
+
+l4_wr_exp <- l2_wr_exp
+
+
+
+writing_exp <- case_when(
+  params$level %in% c("ES220", "ES250", "EA280") ~ l2_wr_exp,
+  params$level == "ES350" ~ l3_wr_exp,
+  params$level == "ES450" ~ l4_wr_exp
+)
+writing_exp <- if (is.na(writing_exp)) NULL else writing_exp
+
+```
+
+`r writing_include`
+
+`r writing_exp`
+
+
+
+```{r writing_tbl}
+writing_tbl <- if (!is.null(writing_exp)  & 
+                   week %>% filter(super_cat == "portal_assignment"  &  
+                                   (str_detect(category, "Draft") | 
+                                    str_detect(category, "Exam"))) %>% nrow > 0 | 
+                   week %>% filter(str_detect(category, "Speech")) %>% nrow > 0) {# added Speech submission logic
+  
+  
+  
+  week %>% filter(super_cat == "portal_assignment"  & 
+                        (str_detect(category, "Draft") | 
+                           str_detect(category, "Exam") )| 
+                    (str_detect(category, "Speech") & 
+                       score == "Complete")) %>% # added Speech submission logic
+    mutate(score = if_else(condition = str_detect(score, "\\d$"),
+                           true = paste0(score, "%"),
+                           false = score )) %>%
+    select(Level = level, 
+           Term = term,
+           Week = week,
+           Assignment = category,
+           Score = score) %>%
+    arrange(Week) %>%
+    gt() %>%
+    tab_header(glue("{params$level} Academic Writing")) %>%
+     cols_align(
+    align = "center",
+    columns = everything()
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "")
+  
+  
+} else if (!is.null(writing_include)) {
+"**It looks like you didn't submit any writing assignments this term.** We look forward to seeing your submissions next year.
+
+  Term Dでは課題の提出を確認できませんでした。Term Aでは提出して、フィードバックをもらいましょう。"
+}
+  
+  
+```
+
+
+`r writing_tbl`
+
+```{r projects}
+### other projects ####
+projects_include <- if (params$level %in% c("LA380","SA500", "SA530", "SA550")) {
+  glue("# Projects
+       
+       {params$level} had a number of projects in Term D. Check how many you submitted and your scores below. You can find more details on the individual pages on Portal."
+       
+       
+  )} else if (params$level == "ES360"){
+  glue("## Writing Assignments
+ 
+      In Term D, there were 3 Writing Assignments. In Weeks 4 and 7, you had to write paragraphs based on the themes of rights and freedom. In addition, you were asked to compare and contrast opinions using supporting and compound sentences. In Week 11, your task was to write 2 paragraphs on the conflicting feelings Americans hold on immigration and diversity. This assignment was evaluated on your writing ability, your ability to support statements, the cohesiveness of the writing, and the smoothness of transition between paragraphs.
+      
+      Term Dでは3つのWriting assignmentの提出がありました。Week 4とWeek 7では授業で取り上げた権利や自由といったテーマに沿ってそれぞれ一つのパラグラフを書き上げました。Supporting Sentencesを用いながら、対照的な意見を述べる方法などを使って自分の考え方を書きました。Week 11では、移民と多様性に対するアメリカ人の持つ、相反する感情について二つのパラグラフから構成される文章を書きあげました。基本的な作文スキルに加え、主張を裏付ける適切な例が盛り込まれているか、まとまりのある文章が書けているか、二つのパラグラフを結ぶ Transition が正しく使えているか、などが評価されました。
+      ")
+  } else if (params$level == "LA400"){
+     glue("## Assignments
+
+       In Week 11, Final Exams were taken at home, and Coffeehouse presentations were given in class. Please check your scores below.
+       ")
+       }
+
+```
+
+`r projects_include`
+
+
+
+```{r}
+
+
+if (!is.null(projects_include) & params$level %in% c("LA380")) {
+
+week_avg %>% filter((super_cat == "portal_assignment" & !str_detect(category, "[E|e]xam") & !str_detect(category, "[T|t]est") & !str_detect(category, "[Q|q]uiz") & !str_detect(category, "[H|h]omework") & !str_detect(category, "Reading Journal")) | str_detect(super_cat, "portal_rp")) %>%
+  left_join(week) %>% 
+  mutate(level = params$level,
+         project = str_remove(super_cat, "portal_"),
+         project = str_replace(project, "rp", "Research Project "),
+        # project = str_to_title(project),
+         category = str_to_title(category)) %>% 
+  select(Level = level, Term = term, Week = week, Project = project, Assignment = category, Score = score, Average = avg) %>% 
+    arrange(Week) %>% 
+  gt(groupname_col = "Project") %>% 
+    fmt_number(
+    columns = vars(Average),
+    decimals = 1
+  ) %>%
+       cols_align(
+    align = "center",
+    columns = vars("Level", "Term", "Week", "Score")
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "")
+  
+} else if (!is.null(projects_include) & params$level %in% c("ES360")) {
+  week_avg %>% filter(str_detect(super_cat, "portal_wc")) %>%
+  left_join(week) %>% 
+  mutate(level = params$level,
+         project = str_remove(super_cat, "portal_"),
+         project = str_replace(project, "wc", "Writing Assignment "),
+        # project = str_to_title(project),
+         category = str_to_title(category),
+        week = parse_number(str_extract(project, "\\d+"))) %>% 
+        arrange(week) %>%
+  select(Level = level, Term = term, Project = project, Assignment = category, Score = score, Average = avg) %>% 
+  gt(groupname_col = "Project") %>% 
+    fmt_number(
+    columns = vars(Average),
+    decimals = 1
+  ) %>%
+       cols_align(
+    align = "center",
+    columns = vars("Level", "Term", "Score")
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "")
+  
+  
+  
+}  else if(!is.null(projects_include) & params$level == "LA400"){
+  week_avg %>% 
+    filter(super_cat == "portal_assignment") %>%
+    left_join(week) %>% 
+  mutate(level = params$level,
+         category = str_to_title(category)) %>% 
+  select(Level = level, Term = term, Week = week, Section = category, Score = score, Average = avg) %>% 
+    arrange(Week) %>% 
+  gt() %>% 
+    fmt_number(
+    columns = vars(Average),
+    decimals = 1
+  ) %>%
+       cols_align(
+    align = "center",
+    columns = vars("Level", "Term", "Week", "Score")
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "")
+  
+} else if (!is.null(projects_include)){  
+week_avg %>% filter((super_cat == "portal_assignment" & !str_detect(category, "[E|e]xam") & !str_detect(category, "[T|t]est") & !str_detect(category, "[Q|q]uiz") & !str_detect(category, "[H|h]omework")) | str_detect(super_cat, "portal_rp")|str_detect(super_cat, "assignment") & str_detect(category, "riting")) %>%
+  left_join(week) %>% 
+  mutate(level = params$level,
+         category = str_to_title(category)) %>% 
+  select(Level = level, Term = term, Week = week, Section = category, `Your Score` = score, Average = avg) %>% filter(!is.nan(Average)) %>%
+    arrange(Week) %>% 
+    ungroup() %>%
+  gt() %>% 
+    fmt_number(
+    columns = vars(Average),
+    decimals = 1
+  ) %>%
+       cols_align(
+    align = "center",
+    columns = vars("Level", "Term", "Week", "Your Score")
+  ) %>%
+  fmt_missing(columns = everything(), missing_text = "")
+
+}
+  # filter(str_detect(category, "[R|r]esearch") | str_detect(category, "[D|d]iscussion") | str_detect(category, "[R|r]eview") | str_detect(category, "[R|r]emember"))
+
+
+
+
+```
+
+
+```{r dojo}
+### dojo ####
+dojo_title <- if (params$level %in% c("EA570", "EA580")|params$delin %in% c("Core", "Scholars", "Explorers")){
+#if (params$level %in% c( "ES030", "ES040", "EX100", "EX200", "EX250", "EA570", "EA580", "EX300", "EX350", "LA380")|(vocab_dojo %>% nrow > 0)){
+glue("# J PREP Dojo
+    ")
+}
+
+dojo_exp <- if(params$level %in%  c("EA570", "EA580") | params$delin == "Core"){ 
+glue("J PREP offers weekly content for grammar and vocabulary practice through our online Dojo app. Vocab Dojo also provides content for the most common textbooks in Japanese schools, and a custom-built vocab list grouped in order of difficulty. You can access this through the J PREP Dojo link in the Learning Support section of Portal.
+
+週ごとに文法・単語暗記の練習メニューを提供しています。単語アプリでは、他にも学校でよく使われる教科書の練習メニューも、 J PREPの語彙グループのメニューもあります。Portal の Learning Support からアクセスできます。
+  ")
+
+} else if (params$level %in% c("EX100", "EX200", "EX250")) {
+  glue("We have just introduced Vocab Dojo for {params$level}.  You can practice new words with our custom-built vocab list grouped in order of difficulty. You can access this through the J PREP Dojo link in the Learning Support section of Portal.
+  
+       単語アプリでは、J PREPの語彙グループの練習メニューを提供しています。Portal の Learning Support からアクセスできますので使ってみましょう。
+       ")
+} else if(!is.null(dojo_title)) {
+   glue("We have just introduced Vocab Dojo for {params$level}. You can practice new words with our custom-built vocab list grouped in order of difficulty.
+   
+       単語アプリでは、J PREPの語彙グループの練習メニューを提供しています。Portal の Learning Support からアクセスできますので使ってみましょう。")
+}
+
+
+```
+
+
+`r dojo_title`
+
+`r dojo_exp`
+
+
+
+```{r g_dojo}
+gdojo <- if (grammar_dojo %>%  nrow>0 & !is.null(dojo_title)) {
+grammar_dojo %>% 
+   filter(exam_id == params$exam_id) %>% 
+            ungroup() %>%
+        select(-student_id, -exam_id) %>%
+  gt() %>% tab_header( title = "Grammar Dojo Usage", 
+                       subtitle = "Questions Answered in Term D") %>% 
+    cols_label(rate = "Learning Rate",
+               count = "Count") %>%
+    cols_align(
+    align = "center",
+    columns = everything()
+  )
+    
+} else if (params$level %in% c("EA570", "EA580")|params$delin == "Core"){
+  glue("It looks like you didn't use grammar dojo this term. This resource is a useful learning tool and we recommend you log in two or three times per week to polish your skills.
+
+      文法暗記アプリを使っていないようです。是非使ってみましょう。")
+} 
+```
+
+
+
+`r if(!is.null(gdojo)) {glue("### Grammar Dojo")}`
+
+`r gdojo`
+
+
+```{r v_dojo}
+vdojo <- if (vocab_dojo %>%  nrow>0 & !is.null(dojo_title)) {
+vocab_dojo %>% 
+    filter(exam_id == params$exam_id) %>% 
+        ungroup() %>%
+        select(-student_id, -exam_id) %>%
+  gt() %>% 
+    tab_header(title = "Vocab Dojo Usage", 
+               subtitle = "Questions Answered in Term D") %>% 
+    cols_label(rate = "Learning Rate",
+               count = "Count") %>%
+    cols_align(
+    align = "center",
+    columns = everything()
+  )
+} else if (params$level %in% c("EA570", "EA580")|params$delin == "Core"){
+  glue("It looks like you didn't use vocab dojo this term. This resource is a useful learning tool and we recommend you log in three times per week to polish your skills. You can practice content related to your J PREP course, popular school textbooks, and J PREP's custom vocabulary groupings.
+       
+    J PREP 単語暗記アプリを使っていないようです。是非使ってみましょう。")
+  
+  
+} else if(!is.null(dojo_title)){
+  glue("It looks like you didn't use vocab dojo this term. This resource is a useful learning tool and we recommend you log in three times per week to polish your skills. You can practice content related to popular school textbooks and J PREP's custom vocabulary groupings.
+       
+     J PREP 単語暗記アプリを使っていないようです。是非使ってみましょう。") 
+}
+
+```
+
+
+
+`r if (!is.null(vdojo)){glue("### Vocab Dojo")}`
+
+`r vdojo`
+
+
+```{r ipad}
+### ipad ####
+ipad_include <-　if (week %>% filter(str_detect(super_cat, "ipad")) %>% nrow >0 & params$delin != "Domestic" & params$delin != "Scholars"){
+  
+#  if((week %>% filter(str_detect(super_cat, "ipad")) %>% nrow > 0) & params$delin != "Domestic" ) {
+  glue("# J PREP iPad App
+
+J PREP Portal provides many activities each week, but our iPad app allows students to submit videos for personalised feedback on pronunciation and speaking.
+
+J PREP の iPadアプリでは動画を提出し、個人的なフィードバックがもらえるサービスを提供しています。発音向上につながる練習です。
+今Term自分がどれだけ取り組んだか確認しましょう。")
+}
+```
+
+
+`r ipad_include`
+
+```{r ipad_watch}
+ipad_watch <- if (!is.null(ipad_include) &  week %>%
+    filter(super_cat == "ipad_watch") %>% nrow > 0 & params$level != "LA380") {
+  week %>%
+    filter(super_cat == "ipad_watch") %>%
+    mutate(level = if_else(is.na(level), "Other", level)) %>%
+    select(Level = level,
+           Term = term,
+           Week = week,
+           super_cat, 
+           category) %>% 
+    pivot_wider(names_from = super_cat,
+                values_from = category) %>%
+    arrange(Week)%>% 
+  gt()  %>%
+    cols_label(ipad_watch = "Video Title") %>%
+    fmt_missing(columns = everything(), missing_text = "") %>%
+    cols_align(
+    align = "center",
+    columns = everything()
+  )
+}
+
+
+
+
+```
+
+`r if (!is.null(ipad_watch)){glue("### Videos Watched")}`
+
+`r ipad_watch`
+
+```{r ipad_sub}
+ipad_sub <- if (week %>% filter(str_detect(super_cat, "ipad_sub")) %>% nrow >0 & !is.null(ipad_include)) {
+  week %>% 
+    filter(str_detect(super_cat, "ipad_sub"))%>%
+    select(Term = term, Week = week, `Submitted Video` = category) %>%
+    arrange(Week)%>%
+    gt()  %>%
+      fmt_missing(columns = everything(), missing_text = "") %>%
+      cols_align(
+      align = "center",
+      columns = everything()
+  )
+ }  #else if (!is.null(ipad_include)) {
+#    glue(" It looks like you didn't submit any videos to us this term. Since you used the iPad app, we recommend using the submission tool for personal feedback.")
+#  }
+```
+
+
+`r if (!is.null(ipad_sub)){glue("### Videos Submitted")}`
+
+ 
+`r ipad_sub`
+
+
+
+
+```{r include=FALSE}
+# removed kids
+library_include <- if (params$delin %in% c("Explorers") | (params$level == "LA380" & term %>% filter(str_detect(super_cat, "library")) %>% nrow >0)) {
+glue("Row
+-----------------
+
+# J PREP Library")
+}
+
+
+```
+
+`r library_include`
+
+```{r library, include=FALSE}
+lib_exp <- if(!is.null(library_include)){
+  glue("At J PREP, we love reading. We have a library filled with interesting books for you to borrow from. Feel free to talk with our staff to get appropriate recommendations. Find the details of how much you read below.
+  
+  J PREPでは読書を推奨しています。J PREP Library には何千冊もあります。スタッフの声を掛けたら、喜んでお勧めももらえます。今 Term 何冊を借りたのか確認しましょう。\n\n
+") 
+}
+
+lib <- if (!is.null(library_include) & 
+            term %>% 
+              filter(str_detect(super_cat, "library_j")) %>% 
+              mutate(score = as.numeric(score)) %>%
+              pull(score) %>% 
+              sum(na.rm = T) >0) {
+  
+term %>% ungroup() %>% select(-exam_id) %>% 
+    filter(str_detect(super_cat, "library_j") ) %>% 
+    mutate(super_cat = str_replace_all(super_cat, "_", " "),
+           super_cat = str_to_title(super_cat),
+           super_cat = str_replace(super_cat, "Jprep", "J PREP"),
+           category = str_replace_all(category, "_", " "),
+           category = str_to_title(category)) %>%
+    pivot_wider(names_from = category,
+                values_from = score) %>% 
+    select(-contains("assigned")) %>%
+    mutate_at(vars(contains("Reading Time")),  seconds_to_period) %>%
+    select(-student_id) %>%
+    rename(Library = super_cat) %>%
+  gt() %>%
+    fmt_missing(columns = everything(), missing_text = "") %>%
+    cols_align(
+    align = "center",
+    columns = everything()
+  ) 
+} else if(!is.null(library_include)) {
+  glue("It looks like you didn't borrow any books this term. \n\n今 Term J PREP 図書館から借りていないようです。")
+} 
+
+
+
+```
+
+`r if(!is.null(library_include)) lib_exp`
+
+`r if(!is.null(library_include)) lib` 

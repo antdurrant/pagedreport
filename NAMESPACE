@@ -3,4 +3,6 @@
 export(paged_grid)
 export(paged_hazelnuts)
 export(paged_mine)
+export(paged_reportcard)
+export(paged_take2)
 export(paged_windmill)

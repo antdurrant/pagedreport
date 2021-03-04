@@ -31,7 +31,7 @@ paged_mine <-
 
     if (logo == "0") {
       logo <-
-        pkg_resource("logo/dots-logo.svg")
+        pkg_resource("logo/logo_kids.svg")
     }
 
     # darken img
