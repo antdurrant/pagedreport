@@ -329,3 +329,11 @@ p, ul {
   img {
     max-width: 100%;
   }
+  
+  @media print { 
+  table,
+  table tr td,
+  table tr th {
+    page-break-inside: avoid;
+  }
+}
